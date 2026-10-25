@@ -1,7 +1,7 @@
 ---
 title: "CSC14120 2026 — Midterm Engineering Specification: Two-Image Panorama Stitching"
 document_type: "Specification-Driven Development / Design Before Implementation"
-version: "1.0.0-draft"
+version: "1.0.1-draft"
 status: "PROPOSED — pending starter notebook, team decisions, and dataset"
 language: "en"
 date: "2026-10-25"
@@ -21,6 +21,8 @@ primary_scope: "Midterm proposal and V0 sequential baseline; GPU design only"
 **Primary assignment**: `CSC14120_2026_Final Project_MidTerm.pdf`, pp. 1–3, §§1–4.  
 **Supporting context**: `CSC14120_2026_Final Project.pdf`, pp. 1–9, especially §§1–4 and §6.  
 **Additional technical sources**: peer-reviewed literature, official OpenCV/NVIDIA documentation, MIT *Foundations of Computer Vision*, and Szeliski's textbook, listed in §19.
+
+**Math rendering:** This Markdown uses GitHub-flavored math notation: `$...$` for inline formulas and standalone `$$` lines for display formulas. Use a Markdown preview with LaTeX/KaTeX/MathJax support (for example, GitHub or a current VS Code Markdown preview). A plain-text editor will show the LaTeX source rather than typeset equations.
 
 ---
 
@@ -130,18 +132,18 @@ The overall final-project brief expects V0, V1 (every stage on GPU), and **at le
 
 **Homogeneous projective model:**
 
-\[
+$$
 \lambda\begin{bmatrix}x_A\\y_A\\1\end{bmatrix}
 =H_{BA}\begin{bmatrix}x_B\\y_B\\1\end{bmatrix},\quad
 H_{BA}=\begin{bmatrix}h_{11}&h_{12}&h_{13}\\h_{21}&h_{22}&h_{23}\\h_{31}&h_{32}&h_{33}\end{bmatrix}.
-\]
+$$
 
 Let `d = h31*xB + h32*yB + h33`. For finite, nonzero `d`:
 
-\[
+$$
 x_A=\frac{h_{11}x_B+h_{12}y_B+h_{13}}{d},\qquad
  y_A=\frac{h_{21}x_B+h_{22}y_B+h_{23}}{d}.
-\]
+$$
 
 A homography has **eight independent degrees of freedom** because multiplying all nine entries by the same nonzero scalar leaves the geometric mapping unchanged. Comparing unnormalized coefficients element by element is **not a meaningful accuracy test**. See [R4], [R5].
 
@@ -157,9 +159,9 @@ A single planar projectivity is a reasonable model for (i) a predominantly plana
 
 **Resampling** asks which source location contributed to one output pixel; therefore, for a canvas translation `T` and output pixel `q_canvas`, the correct B sampling coordinate is
 
-\[
+$$
 p_B=\pi\!\left(H_{BA}^{-1}\,T^{-1}\,\tilde q_{canvas}\right).
-\]
+$$
 
 This distinction is a frequent source of panoramas being displaced in the wrong direction. An identity/known-translation test must validate it **before** attempting natural images.
 
@@ -301,9 +303,9 @@ Required prepared image sizes from the final brief:
 
 **[DESIGN]** To preserve a consistent geometric tolerance across resized copies, define
 
-\[
+$$
 \tau_{\mathrm{RANSAC}}(W)=3.0\;\frac{W}{1920}\ \text{pixels},
-\]
+$$
 
 where `W` is the prepared width of A. This is a **predeclared scale policy**, not a requirement or a result. The fixed 15-pixel descriptor radius and other pixel-space parameters **do not automatically become scale-invariant**; assess their impact with the same scenes at all three sizes, and choose a coherent cross-resolution policy before measuring.
 
@@ -327,23 +329,23 @@ Each stage specifies its **mathematics**, **sequential implementation behavior**
 
 Given an 8-bit RGB pixel, form the approximate luma
 
-\[
+$$
 I(x,y)=0.299R(x,y)+0.587G(x,y)+0.114B(x,y).
-\]
+$$
 
 Represent grayscale as `float32` or another explicitly chosen floating-point type for subsequent derivatives. Define the continuous Gaussian
 
-\[
+$$
 G_\sigma(x,y)=\frac{1}{2\pi\sigma^2}
 \exp\left(-\frac{x^2+y^2}{2\sigma^2}\right),
-\]
+$$
 
 and obtain its **discrete, finite, normalized** filter weights. A separable Gaussian satisfies
 
-\[
+$$
 G_\sigma(x,y)=g_\sigma(x)g_\sigma(y),\qquad
 I_s = (g_\sigma^{(y)} * (g_\sigma^{(x)} * I)).
-\]
+$$
 
 For a `k×k` kernel, two 1D passes use on the order of `2k` taps per pixel instead of `k²` taps; the actual CPU speedup still depends on cache, allocation, and implementation details.
 
@@ -370,21 +372,21 @@ For a `k×k` kernel, two 1D passes use on the order of `2k` taps per pixel inste
 
 Corners exhibit strong intensity variation under **small displacements in more than one direction**. For local derivatives `I_x` and `I_y`, compute the smoothed second-moment matrix
 
-\[
+$$
 M(x,y)=\begin{bmatrix}
 S_{xx}&S_{xy}\\S_{xy}&S_{yy}
 \end{bmatrix},\quad
 S_{xx}=G*I_x^2,\quad
 S_{xy}=G*(I_xI_y),\quad
 S_{yy}=G*I_y^2.
-\]
+$$
 
 Its eigenvalues describe the strength of intensity variation along two principal directions. Harris avoids explicit eigenvalue calculation using
 
-\[
+$$
 R(x,y)=\det M-\kappa(\operatorname{tr}M)^2
 =S_{xx}S_{yy}-S_{xy}^2-\kappa(S_{xx}+S_{yy})^2.
-\]
+$$
 
 High positive `R` is characteristic of many corners; flat regions generally yield low magnitude; strong single-direction edges often yield a negative response. **Harris is a detector**, not a rotation- or scale-invariant descriptor. [R1]
 
@@ -420,24 +422,24 @@ Gradients and response maps are essentially `O(WH)` for fixed window sizes; a gl
 
 ### Mathematical foundations
 
-A BRIEF descriptor stores outcomes of pairwise intensity comparisons in a patch surrounding one keypoint. For a fixed list of `n=256` offset pairs `(p_i,q_i)`, one bit is
+A BRIEF descriptor stores outcomes of pairwise intensity comparisons in a patch surrounding one keypoint. For a fixed list of `n=256` two-dimensional offset pairs `(p_i,q_i)` and a keypoint position $\mathbf{x}=(x,y)^T$, one bit is
 
-\[
-b_i=\mathbb{1}\big[I_s(x+p_i)<I_s(x+q_i)\big],\qquad i=0,\ldots,255.
-\]
+$$
+b_i=\mathbf{1}\!\left[I_s(\mathbf{x}+\mathbf{p}_i)<I_s(\mathbf{x}+\mathbf{q}_i)\right],\qquad i=0,\ldots,255.
+$$
 
 For a more rotation-tolerant variant, compute the patch's **intensity centroid** using moments over a disk `Ω` centered at the keypoint:
 
-\[
+$$
 m_{pq}=\sum_{(u,v)\in\Omega} u^p v^q I_s(x+u,y+v),\qquad
 \theta=\operatorname{atan2}(m_{01},m_{10}).
-\]
+$$
 
-Rotate both offsets of each comparison through
+For oriented BRIEF, replace each offset $\mathbf{p}_i$ and $\mathbf{q}_i$ by $R_\theta\mathbf{p}_i$ and $R_\theta\mathbf{q}_i$ before sampling, where
 
-\[
+$$
 R_\theta=\begin{bmatrix}\cos\theta&-\sin\theta\\\sin\theta&\cos\theta\end{bmatrix}.
-\]
+$$
 
 Then evaluate intensities at the rotated positions, using one defined sampling/interpolation policy. ORB popularized orientation estimation via intensity centroid and **steered BRIEF**; its complete detector/descriptor system also incorporates FAST and a scale pyramid. Our combination should be described accurately as **Harris + oriented-BRIEF-style**, not full ORB. [R2, R3]
 
@@ -468,16 +470,16 @@ Orientation steering reduces some in-plane rotation sensitivity; without image p
 
 The **Hamming distance** between two binary descriptors is the number of differing bits:
 
-\[
+$$
 d_H(a,b)=\operatorname{popcount}(a\oplus b)
 =\sum_{j=0}^{7}\operatorname{popcount}(a_j\oplus b_j).
-\]
+$$
 
 For each descriptor in A, find the lowest and second-lowest Hamming distances to descriptors in B (`d1`, `d2`). A commonly used ambiguity filter is a Lowe-style ratio test:
 
-\[
+$$
 \frac{d_1}{d_2}<r,\qquad r=0.80,\quad d_2>0.
-\]
+$$
 
 This was originally motivated in the context of real-valued SIFT descriptor matching; for **binary Hamming distances** it is a *heuristic that must be validated empirically*, not a theoretical guarantee. OpenCV's matcher documentation identifies Hamming as the appropriate distance for BRIEF/ORB-style binary vectors and describes reciprocal cross-checking. [R6]
 
@@ -511,18 +513,18 @@ Given up to `K_A` and `K_B` descriptors, brute-force comparisons are `K_A*K_B`, 
 
 Let each match supply `(x,y)` in B and `(u,v)` in A, and let the row-major homography vector be
 
-\[
+$$
 h=(h_{11},h_{12},h_{13},h_{21},h_{22},h_{23},h_{31},h_{32},h_{33})^T.
-\]
+$$
 
 Projective equality yields **two linear equations per correspondence**:
 
-\[
+$$
 \begin{bmatrix}
 -x&-y&-1&0&0&0&ux&uy&u\\
 0&0&0&-x&-y&-1&vx&vy&v
 \end{bmatrix}h=0.
-\]
+$$
 
 Stacking `N` pairs forms `A h = 0`, where `A` is `2N×9`. Four nondegenerate point pairs supply eight independent constraints for a homography's eight degrees of freedom. The standard **homogeneous DLT** solution is a unit-length right singular vector of `A` associated with the smallest singular value (equivalently an eigenvector of `AᵀA` with smallest eigenvalue, with caution about condition-number squaring). [R4]
 
@@ -535,11 +537,11 @@ Before fitting, independently normalize point coordinates in both images:
 - Translate each point set so its centroid is at the origin.
 - Uniformly scale so the **mean Euclidean distance** from the origin is `√2`.
 - Let `T_B` normalize points in B and `T_A` normalize those in A.
-- Fit `\widehat H` on the normalized point pairs, then **denormalize in the correct direction**:
+- Fit $\widehat{H}$ on the normalized point pairs, then **denormalize in the correct direction**:
 
-\[
+$$
 H_{BA}=T_A^{-1}\widehat H T_B.
-\]
+$$
 
 After denormalization, fix the arbitrary scale using a documented rule (e.g. divide by Frobenius norm and select a consistent sign), **not by unconditionally dividing by `h33`**. Normalization improves conditioning but does not repair degenerate correspondences. It is standard numerical practice for DLT-like geometric estimation. [R4, R5]
 
@@ -547,10 +549,10 @@ After denormalization, fix the arbitrary scale using a documented rule (e.g. div
 
 RANSAC repeatedly samples four **distinct** correspondences, estimates a candidate homography, and counts pairs agreeing with it. Use **forward B→A reprojection error**:
 
-\[
+$$
 e_i=\left\|\pi(H_{BA}\tilde p_{B,i})-p_{A,i}\right\|_2,
-\qquad i\text{ is an inlier if }e_i<\tau_{px}.
-\]
+\qquad i\text{ is an inlier if }e_i<\tau_{\mathrm{px}}.
+$$
 
 Define a deterministic candidate score:
 
@@ -562,17 +564,17 @@ After selecting a model, refit with **all of its inliers** using normalized homo
 
 **RANSAC probability model:** if a sampled correspondence has approximate inlier probability `w` and sampling is idealized as independent,
 
-\[
+$$
 P(\text{at least one all-inlier 4-sample in }N\text{ trials})
 =1-(1-w^4)^N.
-\]
+$$
 
 Consequently, the common approximate trial budget for confidence `c` is
 
-\[
+$$
 N\ \ge\ \frac{\log(1-c)}{\log(1-w^4)}
 \quad \text{for }0<w<1.
-\]
+$$
 
 This approximation depends on an estimated `w`; it **does not guarantee** a correct homography, even with an all-inlier sample, due to feature noise, geometric degeneracy, or a wrong model. Sampling four distinct indices without replacement is required in the implementation even though the formula uses a convenient independence approximation. [R4, R7]
 
@@ -603,25 +605,25 @@ For the final model, require at least the internally chosen inlier threshold, an
 
 A's reference-space bounds come from its four pixel-center corners; project the four corresponding corners of B using `H_BA`. If the projected polygon is valid and finite, set
 
-\[
+$$
 x_{\min}=\left\lfloor\min_x(\text{8 corners})\right\rfloor,
 \quad x_{\max}=\left\lceil\max_x(\text{8 corners})\right\rceil
-\]
+$$
 
 and similarly for `y`. Under the **inclusive pixel-center policy** proposed here,
 
-\[
+$$
 W_{canvas}=x_{\max}-x_{\min}+1,\quad
 H_{canvas}=y_{\max}-y_{\min}+1.
-\]
+$$
 
 Define the translation from A coordinates to canvas coordinates as
 
-\[
+$$
 T=\begin{bmatrix}
 1&0&-x_{\min}\\0&1&-y_{\min}\\0&0&1
 \end{bmatrix}.
-\]
+$$
 
 **Projective singularity check:** The denominator `h31*x+h32*y+h33` varies linearly over B's rectangular source domain. It must not cross zero inside that rectangle. Check the **sign and margin at all four corners** (as well as finite projections); a sign change implies a horizon/infinity crossing, even if individual projected corners look finite. Reject unsafe transforms.
 
@@ -631,20 +633,20 @@ Before allocating, use checked integer arithmetic for `width*height*channels`, e
 
 For every output pixel center `q`, obtain source A and B coordinates:
 
-\[
+$$
 p_A=\pi(T^{-1}\tilde q),\qquad
 p_B=\pi(H_{BA}^{-1}T^{-1}\tilde q).
-\]
+$$
 
 A can be sampled at its translated integer coordinates. B uses **bilinear interpolation**; for continuous source coordinates `(x,y)` with `x0=floor(x)`, `y0=floor(y)`, `α=x−x0` and `β=y−y0`,
 
-\[
+$$
 \begin{aligned}
 C(x,y)=&(1-\alpha)(1-\beta)C_{00}
 +\alpha(1-\beta)C_{10}\\
 &+(1-\alpha)\beta C_{01}+\alpha\beta C_{11}.
 \end{aligned}
-\]
+$$
 
 A source point is considered valid if its continuous center lies in `[0,W−1]×[0,H−1]`; handle any needed right/bottom bilinear neighbors with an explicitly defined edge clamp. Pixels outside that continuous range are invalid. **Do not treat an RGB value of `(0,0,0)` as absence of data**.
 
@@ -654,16 +656,16 @@ Maintain Boolean validity masks `mask_A`, `mask_B`. For a pixel covered by just 
 
 For a pixel covered by both, define positive weights from the distance to the nearest **source-image border**; one simple candidate for pixel `(x,y)` in source image width `W`, height `H` is
 
-\[
+$$
 d(x,y)=\min(x,\,y,\,W-1-x,\,H-1-y),\qquad
 w(x,y)=\epsilon+\max(0,d(x,y)),
-\]
+$$
 
 with `ε>0`. Compute weights using the source locations `p_A` and `p_B`, then blend
 
-\[
+$$
 C_{out}=\frac{w_A C_A+w_B C_B}{w_A+w_B}.
-\]
+$$
 
 The source-border-distance policy creates a smooth transition without requiring a global distance transform; it is **one proposed feathering implementation**, not the only possible method. Feathering cannot eliminate ghosting caused by parallax, moving people, or incorrect `H`.
 
@@ -960,12 +962,12 @@ Thresholds for numerical errors in unit tests are **engineering proposals** requ
 
 Because matrices are defined only up to scale, choose corresponding source points `p_j` in image B (for example the four corners plus a regular interior grid) and compute **point-transfer discrepancy**:
 
-\[
+$$
 E_{\mathrm{transfer}}
 =\frac{1}{n}\sum_{j=1}^{n}
 \left\|\pi(H_{\mathrm{est}}\tilde p_j)-
 \pi(H_{\mathrm{gt}}\tilde p_j)\right\|_2.
-\]
+$$
 
 Units are pixels in A's coordinate system. Report **mean, median, maximum**, and perhaps per-corner error. Evaluate only points that both transforms project finitely; if a model projects relevant image areas to infinity, that is failure, not a reason to hide samples.
 
@@ -1003,9 +1005,9 @@ The overall final-project measurement rules provide useful alignment for midterm
 
 **Accounting identity:** If stage-level timers partition the complete computational work, then
 
-\[
+$$
 T_{\mathrm{pipeline}}\approx\sum_{i=1}^{6}T_i + T_{\mathrm{unassigned}},
-\]
+$$
 
 where `T_unassigned` includes genuinely untimed but included overhead (for example dispatch between stages), rounding, and any separately classified common allocations. It must be **measured or explained**, not treated as negative elapsed time or arbitrarily omitted.
 
@@ -1035,9 +1037,9 @@ These are **theoretical complexity expectations**, not benchmark findings. Expla
 
 Choose a set `S` of stages slated for acceleration, and define its measured sequential share on the target pair/size as
 
-\[
+$$
 p=\frac{\sum_{i\in S}T_i}{T_{\mathrm{baseline}}},\qquad 0\le p\le1.
-\]
+$$
 
 Use **the same timing scope** in numerator and denominator:
 
@@ -1046,15 +1048,15 @@ Use **the same timing scope** in numerator and denominator:
 
 If selected work becomes `s` times faster while the rest is unchanged, Amdahl's idealized speedup is
 
-\[
+$$
 S(s)=\frac{1}{(1-p)+p/s}.
-\]
+$$
 
 In the ideal limit `s→∞`, for `p<1`,
 
-\[
+$$
 S_{\max}=\frac{1}{1-p}.
-\]
+$$
 
 **Illustrative math, not measured data:** If a measured target share were `p=0.90`, the mathematical maximum would be `10×`. This example is given in the assignment, but it **must not appear as the team's observed `p`**. [MID §3.5]
 
